@@ -232,13 +232,16 @@ Run all backend tests with:
 
     ./gradlew clean test --no-daemon
 
-The current automated test suite contains 20 tests:
+The current automated test suite contains 35 tests:
 
     TicketStateMachineTest          11
     SupportTicketServiceTest         4
     SupportTicketControllerTest      5
+    SupportTicketListServiceTest     5
+    TicketKnowledgeServiceTest       5
+    SupportTicketAiServiceTest       5
                                    ---
-    Total                           20
+    Total                           35
 
 Coverage includes:
 

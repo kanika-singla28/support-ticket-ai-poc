@@ -50,27 +50,10 @@ public class SupportTicketAiService {
             );
         }
 
-        System.out.println("===== RAG RETRIEVAL DEBUG =====");
-        System.out.println("Question: " + question);
-        System.out.println("Retrieved documents: " + documents.size());
-
-        for (Document document : documents) {
-            System.out.println("--------------------------------");
-            System.out.println("Document ID: " + document.getId());
-            System.out.println("Score: " + document.getScore());
-            System.out.println("Metadata: " + document.getMetadata());
-            System.out.println("Content:");
-            System.out.println(document.getText());
-        }
-
         String context = documents.stream()
                 .map(Document::getText)
                 .filter(Objects::nonNull)
                 .reduce("", (left, right) -> left + "\n\n" + right);
-
-        System.out.println("===== FINAL CONTEXT SENT TO MODEL =====");
-        System.out.println(context);
-        System.out.println("=======================================");
 
         String systemPrompt = """
                 You are a support-ticket question-answering assistant.
