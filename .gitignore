@@ -1,0 +1,27 @@
+# Gradle
+.gradle/
+**/build/
+
+# Node
+node_modules/
+**/node_modules/
+**/dist/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Local runtime files
+*.pid
