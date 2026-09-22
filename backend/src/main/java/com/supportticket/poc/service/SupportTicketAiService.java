@@ -72,25 +72,39 @@ public class SupportTicketAiService {
         System.out.println(context);
         System.out.println("=======================================");
 
-        String prompt = """
-                You are a support ticket assistant.
+        String systemPrompt = """
+                You are a support-ticket question-answering assistant.
 
-                Answer the user's question using ONLY the support ticket
-                information provided in the context below.
+                STRICT GROUNDING RULES:
+                - Answer ONLY from the SUPPORT TICKET CONTEXT supplied by the application.
+                - Treat Title, Description, Priority, Status, Category, Assignee,
+                  Resolution and Comments as authoritative ticket information.
+                - Read the Comments section carefully. Comments are valid evidence.
+                - Read the Resolution section carefully. Resolution text is valid evidence.
+                - If the answer is explicitly present in a comment, use that information.
+                - If the answer is explicitly present in the resolution, use that information.
+                - Do not claim information is missing when it appears in the supplied context.
+                - Do not invent facts, causes, resolutions, comments or ticket IDs.
+                - Answer the specific question directly and concisely.
+                - Do not repeat unrelated ticket fields unless needed for the answer.
+                - If the supplied context genuinely does not contain enough information,
+                  say: "The retrieved ticket information does not contain enough information to answer this question."
+                """;
 
-                Do not invent ticket information.
-                If the requested information is not present in the context,
-                explicitly say that it is not available.
-
-                CONTEXT:
+        String userPrompt = """
+                SUPPORT TICKET CONTEXT
+                ======================
                 %s
+                ======================
+                END SUPPORT TICKET CONTEXT
 
-                USER QUESTION:
+                QUESTION:
                 %s
                 """.formatted(context, question);
 
         String answer = chatClient.prompt()
-                .user(prompt)
+                .system(systemPrompt)
+                .user(userPrompt)
                 .call()
                 .content();
 
