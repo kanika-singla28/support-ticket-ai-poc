@@ -1,0 +1,19 @@
+---
+description: Java 21 / Spring Boot conventions for this Bootcamp backend and the Support Ticket POC
+globs: src/main/java/**/*.java
+alwaysApply: false
+---
+
+# Java / Spring Boot
+
+- Java 21. Spring Boot 3.5.8. Follow existing code; do not upgrade the stack unless asked.
+- Root package: `com.tothenew.bootcamp`. Place POC types beside existing layers (`controller`, `service`, `repository`, `entity`, `dto.request`, `vo`, `validator`, `exception`, `enums`).
+- Layers: REST controller → service → `*RepositoryService` / Spring Data repository. Controllers do not call repositories or `EntityManager` directly.
+- Inject with constructor injection (`@RequiredArgsConstructor`). Do not use field `@Autowired`.
+- Entities that persist tickets/comments extend `BaseEntityWithUserAuditing` (id, JPA `@Version`, timestamps, soft `deleted`, created/updated by). Do not add a second version field.
+- Request bodies are DTOs; API responses are `*VO` wrapped in `CommonResponseVO` / `ListResponseVO`. Do not return entities.
+- Validate with Bean Validation (`@Valid` / `@Validated`) and existing custom-constraint style. Keep max lengths: title 200, description 5000, category 100, comment 5000, resolution 5000.
+- Ticket writes run in one MySQL transaction. Persist `TicketIndexingState` `PENDING` in that same transaction. Embedding/PGVector work starts only after commit (see `spec/rag-ingestion.md`).
+- Map domain failures through existing exception handling / `GlobalExceptionHandler`. Use stable codes `INVALID_TICKET_STATUS_TRANSITION` and `TERMINAL_TICKET_READ_ONLY`. Do not leak SQL, stack traces, prompts, or provider payloads.
+- Do not hardcode secrets. Do not add Gradle dependencies, brokers, Quartz, Kafka, or extra databases except the specified PGVector index.
+- Implement only `spec/` behaviour. Cite `FR-*` / `RAG-*` / `AC-*` in comments sparingly when a class owns those IDs. Preserve existing Bootcamp behaviour.

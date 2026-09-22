@@ -1,0 +1,45 @@
+---
+description: RAG and PGVector engineering rules for the Support Ticket assistant
+alwaysApply: false
+---
+
+# RAG / vector store
+
+Authoritative spec: `spec/architecture.md`, `spec/rag-ingestion.md`, `spec/rag-api-contract.md`, `spec/evaluation-strategy.md`.
+
+## Stores
+
+- **MySQL** is the system of record for tickets, comments, resolution, and `TicketIndexingState`.
+- **PostgreSQL + PGVector** holds derived chunks/embeddings only. Never read ticket truth from PGVector.
+- Do not store embeddings as MySQL JSON/BLOB. Do not migrate Bootcamp to PostgreSQL.
+
+## Knowledge
+
+- Index only support-ticket text: title, description, ordered comments, resolution when present, plus labeled status/priority/assignee/category.
+- Never index Bootcamp resources, FAQs, web content, or other app entities.
+
+Canonical sections, stable order: Ticket ID, Title, Description, Status, Priority, Assignee (`UNASSIGNED` or user display), Category, Comments, Resolution (if present).
+
+Chunk metadata (all required): `ticketId`, `ticketVersion` (= ticket JPA `@Version`), `chunkIndex`, `status`, `priority`, `assigneeId` (nullable), `assigneeDisplay` (never null), `category`.
+
+- One ticket per chunk. Configurable chunk size/overlap. Vector dimension matches the chosen embedding model.
+
+## Retrieval and generation (single flow, not an agent)
+
+1. Embed the question.
+2. PGVector similarity search, limit **configured top-K**, drop scores below **configured threshold**.
+3. If none remain: return no-relevant-tickets (`relevantTicketsFound: false`, empty `sources`) and **do not call** the chat model.
+4. Else one generation using **only** qualifying chunks. No tools, no web, no general knowledge as ticket fact.
+5. `sources[].ticketId` must be a subset of retrieved qualifying IDs. Strip any other IDs.
+
+Do not add generic metadata pre-filters. Metadata is for grounding, citations, eval, and future use.
+
+Endpoint: `POST /api/ai/ask` with `{ "question": "..." }`.
+
+## Freshness
+
+On create, title/description/priority/assignee/category/comment/resolution/status/soft-delete: same MySQL tx writes data + `PENDING` (`requestedVersion` = ticket `@Version`). Embed/replace **after commit**. Replace all chunks for that ticket in one PGVector tx. Do not overwrite a newer indexed `@Version`. Simple in-process retry only — no Kafka, RabbitMQ, Quartz, or admin retry API.
+
+## Providers
+
+Keep provider/model abstract (Ollama vs cloud). Config only; never commit API keys. Changing embedding dimension requires re-index. Evaluate grounding with `spec/evaluation-strategy.md`; do not treat “looks right” as pass.

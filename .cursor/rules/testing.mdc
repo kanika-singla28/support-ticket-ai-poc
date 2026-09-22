@@ -1,0 +1,27 @@
+---
+description: Unit and integration testing rules for ticket CRUD, state machine, and RAG
+globs: src/test/**/*.java
+alwaysApply: false
+---
+
+# Testing
+
+Read `spec/test-strategy.md` and `spec/evaluation-strategy.md` before writing tests. Annotate each test with the `FR-*`, `RAG-*`, `NFR-*`, or `AC-*` it covers. Review AI-generated tests; do not assume they are correct.
+
+## Deterministic (must assert exactly)
+
+- **Unit:** service validation, field updates, optional assignee, length limits (max and max+1), comments, `OPEN` on create.
+- **State machine:** one test per allowed transition; parameterized reject for every other matrix cell; `TERMINAL_TICKET_READ_ONLY` from `CLOSED`/`CANCELLED`.
+- **API:** `/api/tickets` and `POST /api/ai/ask` contracts, envelopes, HTTP statuses, error codes.
+- **Persistence:** MySQL (not H2 as final proof), search/filter, `@Version` increments on searchable mutations including comments, `requestedVersion` matches ticket version.
+- **Ingestion:** `PENDING` is in the same MySQL transaction and rolls back with it. Indexing processing must not begin before commit. Rejected transitions persist neither ticket changes nor indexing intent.
+
+## Probabilistic / RAG
+
+- **Retrieval:** configured top-K and threshold applied; no generic metadata pre-filter required.
+- **No-match:** no qualifying chunk → explicit no-relevant-tickets payload and **zero** chat-model calls.
+- **Citations:** every `sources.ticketId` ⊆ retrieved qualifying ticket IDs; fabricated IDs fail.
+- **Grounding/hallucination:** ticket-specific claims must be entailed by retrieved passages (eval corpus + doubles). Live-provider suites are optional and never contain credentials.
+- **Stale index:** after re-ingestion, old chunks/metadata are gone; older `@Version` must not overwrite a newer index.
+
+Do not change production code only to make a weak test pass. Gradle currently disables `test`; do not “fix” that unless the user is in the planning/implementation phase.

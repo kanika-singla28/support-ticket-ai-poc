@@ -1,0 +1,39 @@
+---
+description: HTTP API standards for Bootcamp and Support Ticket POC endpoints
+globs: src/main/java/**/*.java
+alwaysApply: false
+---
+
+# API standards
+
+## Paths
+
+- Servlet `context-path` is `/api`. Spec paths such as `/api/tickets` and `/api/ai/ask` are **external**.
+- Controller `@RequestMapping` must **not** start with `/api` (avoid `/api/api/...`). Ticket mappings belong at `/tickets`; AI at `/ai/ask`.
+- Existing Bootcamp APIs stay under `${bootcamp.rest.api.v1.baseUri}` (`/v1`). Do not move them.
+
+## Bodies and envelopes
+
+- JSON request DTOs in `dto.request`; responses as `vo` types.
+- Wrap payloads in `CommonResponseVO`. Lists use `ListResponseVO` (`results`, `totalResults`).
+- Controllers: `@RestController`, `@Validated`, `@Valid` on bodies, `@ParameterObject` for list query DTOs where existing style does.
+
+## Validation and status
+
+- Nonblank + max lengths per `spec/api-contract.md`. Priority enum: `LOW|MEDIUM|HIGH|CRITICAL`. Assignee optional existing `User`.
+- Create ticket: no client status; no create-time resolution. `201` for create/comment per spec.
+- `400` validation / `INVALID_TICKET_STATUS_TRANSITION` (nonterminal illegal move).
+- `404` missing or soft-deleted ticket.
+- `409` + `TERMINAL_TICKET_READ_ONLY` for any mutation of `CLOSED`/`CANCELLED`.
+- `401`/`403` via existing `@PreAuthorize` / JWT conventions. Reuse auth; do not invent roles unless specified.
+- `503` for embedding/PGVector/chat outage on `/ai/ask`. Distinct from no-match (`200` + `relevantTicketsFound: false`).
+
+## List
+
+- Pagination: `max`, `offset`, `sortBy`, `sortOrder`, `paginated` (see `BaseListRequestDTO`).
+- Filters: `keyword` (case-insensitive over title, description, category, resolution, comments) and `status`. Both apply together.
+
+## Safety
+
+- No secrets, tokens, SQL, stack traces, raw provider errors, or unrelated Bootcamp data in responses or logs.
+- Indexing failures after MySQL commit are not ticket-write failures.
