@@ -1,45 +1,89 @@
 ---
-description: RAG and PGVector engineering rules for the Support Ticket assistant
+description: RAG, embedding, retrieval, grounding, and PGVector rules for the standalone Support Ticket assistant
+globs: backend/src/main/java/**/*.java
 alwaysApply: false
 ---
 
-# RAG / vector store
+# RAG / Vector Store
 
-Authoritative spec: `spec/architecture.md`, `spec/rag-ingestion.md`, `spec/rag-api-contract.md`, `spec/evaluation-strategy.md`.
+Read `spec/architecture.md`, `spec/rag-ingestion.md`, `spec/rag-api-contract.md`, and `spec/evaluation-strategy.md` before changing the RAG pipeline.
 
-## Stores
+The assistant uses a single retrieval → generation flow. It is not an autonomous agent.
 
-- **MySQL** is the system of record for tickets, comments, resolution, and `TicketIndexingState`.
-- **PostgreSQL + PGVector** holds derived chunks/embeddings only. Never read ticket truth from PGVector.
-- Do not store embeddings as MySQL JSON/BLOB. Do not migrate Bootcamp to PostgreSQL.
+## Knowledge Source
 
-## Knowledge
+- PostgreSQL is the authoritative persistent store for support-ticket data.
+- PGVector stores the derived vector representation used for semantic retrieval.
+- Index only support-ticket knowledge. Do not introduce web content, general knowledge, unrelated application data, or external documents into the retrieval corpus.
+- Ticket knowledge may include title, description, comments, resolution information when present, status, priority, assignee, and category.
+- Preserve enough ticket identity in each knowledge document to trace retrieved context back to the real ticket.
 
-- Index only support-ticket text: title, description, ordered comments, resolution when present, plus labeled status/priority/assignee/category.
-- Never index Bootcamp resources, FAQs, web content, or other app entities.
+## Chunking
 
-Canonical sections, stable order: Ticket ID, Title, Description, Status, Priority, Assignee (`UNASSIGNED` or user display), Category, Comments, Resolution (if present).
+- Use ticket-aware chunking rather than arbitrary unrelated text windows.
+- For the current POC, one ticket-level knowledge document is the default chunk because support tickets are short, structured records and the title, description, comments, status, and resolution are semantically related.
+- Keep one ticket's content separate from every other ticket.
+- If ticket histories become too large, split at logical paragraph/comment boundaries while preserving ticket metadata on every resulting chunk.
+- Avoid splitting identifiers or separating a resolution from the ticket context required to understand it.
+- Document any material change to the chunking strategy before implementing it.
 
-Chunk metadata (all required): `ticketId`, `ticketVersion` (= ticket JPA `@Version`), `chunkIndex`, `status`, `priority`, `assigneeId` (nullable), `assigneeDisplay` (never null), `category`.
+## Metadata
 
-- One ticket per chunk. Configurable chunk size/overlap. Vector dimension matches the chosen embedding model.
+Knowledge documents must carry metadata needed for grounding and source attribution where available:
 
-## Retrieval and generation (single flow, not an agent)
+- `ticketId`
+- `status`
+- `priority`
+- `assignee`
+- `category`
 
-1. Embed the question.
-2. PGVector similarity search, limit **configured top-K**, drop scores below **configured threshold**.
-3. If none remain: return no-relevant-tickets (`relevantTicketsFound: false`, empty `sources`) and **do not call** the chat model.
-4. Else one generation using **only** qualifying chunks. No tools, no web, no general knowledge as ticket fact.
-5. `sources[].ticketId` must be a subset of retrieved qualifying IDs. Strip any other IDs.
+Do not allow model-generated metadata to replace authoritative ticket metadata.
 
-Do not add generic metadata pre-filters. Metadata is for grounding, citations, eval, and future use.
+## Embeddings and Vector Store
 
-Endpoint: `POST /api/ai/ask` with `{ "question": "..." }`.
+- Use Spring AI with PGVector for vector storage and similarity retrieval.
+- The current local embedding choice is Ollama with `nomic-embed-text`.
+- The local Ollama choice favors development privacy and avoids per-request cloud embedding cost, at the expense of local compute requirements and potentially different latency/quality from hosted embedding models.
+- Keep model/provider selection configurable where supported by project configuration.
+- Vector dimensions must remain compatible with the selected embedding model and PGVector schema.
+- Changing to an incompatible embedding model requires rebuilding the affected vector index.
+- Never commit model-provider credentials or API keys.
 
-## Freshness
+## Retrieval
 
-On create, title/description/priority/assignee/category/comment/resolution/status/soft-delete: same MySQL tx writes data + `PENDING` (`requestedVersion` = ticket `@Version`). Embed/replace **after commit**. Replace all chunks for that ticket in one PGVector tx. Do not overwrite a newer indexed `@Version`. Simple in-process retry only — no Kafka, RabbitMQ, Quartz, or admin retry API.
+- Similarity retrieval must use configuration values for top-K and similarity threshold. Do not hardcode them in business logic.
+- Retrieve only qualifying support-ticket knowledge.
+- Treat retrieved documents as candidate evidence, not automatically correct model output.
+- Returned source ticket IDs must come from the qualifying retrieved documents.
+- Do not fabricate, infer, or accept a ticket ID merely because the language model mentions it.
 
-## Providers
+## Grounding and Generation
 
-Keep provider/model abstract (Ollama vs cloud). Config only; never commit API keys. Changing embedding dimension requires re-index. Evaluate grounding with `spec/evaluation-strategy.md`; do not treat “looks right” as pass.
+1. Accept the user's support-ticket question.
+2. Perform similarity retrieval using the configured top-K and similarity threshold.
+3. If no qualifying documents remain, return the explicit no-relevant-tickets response with an empty source list.
+4. Do not invoke answer generation for a no-match result.
+5. If qualifying documents exist, provide only that retrieved ticket context to the generation step.
+6. Instruct the model to answer only from the supplied ticket context.
+7. Do not use general model knowledge as evidence for support-ticket facts.
+8. Derive structured response sources programmatically from retrieved ticket metadata rather than from model-generated citations.
+9. Treat unsupported or fabricated ticket references in generated text as a grounding failure and reject, remove, or otherwise prevent them from being presented as valid citations.
+
+Endpoint: `POST /api/ai/ask`.
+
+This endpoint performs one retrieval followed by at most one grounded generation. It must not autonomously create tickets, update tickets, send notifications, browse the web, invoke tools, or chain additional actions.
+
+## Freshness / Re-ingestion
+
+- Refresh ticket knowledge when searchable ticket context changes.
+- Changes requiring refresh include ticket creation and relevant updates such as title, description, priority, assignee, category, comments, resolution information, or status.
+- Replacement/re-ingestion must prevent obsolete knowledge for the same ticket from remaining authoritative in retrieval.
+- Ticket persistence remains authoritative even if vector indexing or an AI dependency fails.
+- Test re-ingestion behaviour so stale ticket knowledge does not silently remain searchable.
+
+## Evaluation
+
+- Evaluate deterministic retrieval behaviour separately from probabilistic generated-answer quality.
+- Test successful grounded retrieval, no-match behaviour, source integrity, stale-index replacement, and hallucinated/unsupported ticket references.
+- A plausible-sounding answer is not sufficient evidence of correctness.
+- Use `spec/evaluation-strategy.md` and the hallucination-review command when evaluating assistant output.

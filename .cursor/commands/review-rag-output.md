@@ -11,7 +11,7 @@ Inputs (required): user question, retrieved chunks (ticket IDs + text + scores i
 - No fabricated ticket IDs
 - Every citation ∈ retrieved qualifying ticket IDs
 - If no chunk meets threshold: `relevantTicketsFound=false`, empty sources, **no** generation
-- Irrelevant or stale retrieved tickets (text/metadata older than MySQL)
+- Irrelevant or stale retrieved tickets (text/metadata older than the authoritative PostgreSQL ticket data)
 - Threshold/top-K misapplication
 
 ## Output (use this structure)

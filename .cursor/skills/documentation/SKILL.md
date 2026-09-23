@@ -32,7 +32,7 @@ Label sections so they are not mixed:
 | Kind | Allowed content |
 |---|---|
 | Requirement | `FR-*`, `RAG-*`, `NFR-*`, `AC-*` and assignment obligations |
-| Architecture | Dual store, after-commit indexing, provider abstraction, rejected alternatives |
+| Architecture | PostgreSQL persistence, PGVector retrieval, RAG flow, provider/model choices, rejected alternatives |
 | Implementation | What the current code actually does |
 | Evaluation | Measured retrieval/grounding results, dataset version, models used |
 

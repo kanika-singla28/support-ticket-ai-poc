@@ -1,39 +1,57 @@
 ---
-description: HTTP API standards for Bootcamp and Support Ticket POC endpoints
-globs: src/main/java/**/*.java
+description: HTTP API standards for the standalone Support Ticket POC
+globs: backend/src/main/java/**/*.java
 alwaysApply: false
 ---
 
-# API standards
+# API Standards
+
+Read `spec/api-contract.md` and `spec/rag-api-contract.md` before changing REST endpoints. The specifications are the source of truth for API behaviour.
 
 ## Paths
 
-- Servlet `context-path` is `/api`. Spec paths such as `/api/tickets` and `/api/ai/ask` are **external**.
-- Controller `@RequestMapping` must **not** start with `/api` (avoid `/api/api/...`). Ticket mappings belong at `/tickets`; AI at `/ai/ask`.
-- Existing Bootcamp APIs stay under `${bootcamp.rest.api.v1.baseUri}` (`/v1`). Do not move them.
+- The application uses `/api` as its servlet context path.
+- External ticket endpoints therefore use `/api/tickets`.
+- The AI question-answering endpoint is `POST /api/ai/ask`.
+- Controller mappings must account for the configured context path and must not accidentally produce `/api/api/...`.
+- Do not introduce unrelated API versions or endpoint families unless required by the specification.
 
-## Bodies and envelopes
+## Requests and Responses
 
-- JSON request DTOs in `dto.request`; responses as `vo` types.
-- Wrap payloads in `CommonResponseVO`. Lists use `ListResponseVO` (`results`, `totalResults`).
-- Controllers: `@RestController`, `@Validated`, `@Valid` on bodies, `@ParameterObject` for list query DTOs where existing style does.
+- Use request/response DTOs from `com.supportticket.poc.dto`; do not expose JPA entities directly.
+- JSON contracts must remain consistent with `spec/api-contract.md` and `spec/rag-api-contract.md`.
+- Use Bean Validation and `@Valid` for request-body validation.
+- Keep optional fields genuinely optional and validate required fields at the backend.
+- Return meaningful HTTP responses rather than exposing internal exceptions or implementation details.
 
-## Validation and status
+## Ticket API Behaviour
 
-- Nonblank + max lengths per `spec/api-contract.md`. Priority enum: `LOW|MEDIUM|HIGH|CRITICAL`. Assignee optional existing `User`.
-- Create ticket: no client status; no create-time resolution. `201` for create/comment per spec.
-- `400` validation / `INVALID_TICKET_STATUS_TRANSITION` (nonterminal illegal move).
-- `404` missing or soft-deleted ticket.
-- `409` + `TERMINAL_TICKET_READ_ONLY` for any mutation of `CLOSED`/`CANCELLED`.
-- `401`/`403` via existing `@PreAuthorize` / JWT conventions. Reuse auth; do not invent roles unless specified.
-- `503` for embedding/PGVector/chat outage on `/ai/ask`. Distinct from no-match (`200` + `relevantTicketsFound: false`).
+- Support creation, listing, detail retrieval, updates, comments, keyword search, status filtering, and status transitions as defined by the specifications.
+- New tickets begin in `OPEN`.
+- Updates may change only fields permitted by the API contract.
+- Search and status filters must remain compatible when used together.
+- Missing tickets return an appropriate not-found response.
+- Invalid input returns a client-error response with a meaningful message.
+- Invalid state transitions must be rejected by the backend and must not mutate persisted ticket state.
 
-## List
+## AI API Behaviour
 
-- Pagination: `max`, `offset`, `sortBy`, `sortOrder`, `paginated` (see `BaseListRequestDTO`).
-- Filters: `keyword` (case-insensitive over title, description, category, resolution, comments) and `status`. Both apply together.
+- `POST /api/ai/ask` accepts a natural-language support-ticket question.
+- The assistant must use only qualifying retrieved ticket context for support-specific answers.
+- Returned ticket sources must be derived from retrieved ticket metadata, never invented by the model.
+- When no qualifying ticket context exists, return the explicit no-relevant-tickets response rather than generating a plausible answer from general model knowledge.
+- A no-match result is a valid application response and is distinct from an embedding, vector-store, or chat-model failure.
+- Keep the AI flow single-turn retrieval → generation. The endpoint must not autonomously create/update tickets or invoke unrelated actions.
 
-## Safety
+## Error Handling
 
-- No secrets, tokens, SQL, stack traces, raw provider errors, or unrelated Bootcamp data in responses or logs.
-- Indexing failures after MySQL commit are not ticket-write failures.
+- Keep validation, not-found, invalid-transition, malformed-request, and dependency-failure handling consistent through `GlobalExceptionHandler`.
+- Preserve meaningful client-facing messages.
+- Do not expose stack traces, SQL, prompts, credentials, environment values, vector-store internals, or raw model/provider errors.
+
+## Safety and Compatibility
+
+- Never hardcode or return passwords, tokens, API keys, database credentials, or model credentials.
+- Keep API changes backward-compatible with the documented standalone POC unless the specification is intentionally changed first.
+- Keep relational ticket persistence and the derived RAG/vector index logically separate.
+- A RAG/indexing concern must not silently corrupt authoritative ticket data.
