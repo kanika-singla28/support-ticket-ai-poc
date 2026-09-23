@@ -1,19 +1,24 @@
 ---
-description: Java 21 / Spring Boot conventions for this Bootcamp backend and the Support Ticket POC
-globs: src/main/java/**/*.java
+description: Java 21 / Spring Boot conventions for the standalone Support Ticket POC
+globs: backend/src/main/java/**/*.java
 alwaysApply: false
 ---
 
 # Java / Spring Boot
 
-- Java 21. Spring Boot 3.5.8. Follow existing code; do not upgrade the stack unless asked.
-- Root package: `com.tothenew.bootcamp`. Place POC types beside existing layers (`controller`, `service`, `repository`, `entity`, `dto.request`, `vo`, `validator`, `exception`, `enums`).
-- Layers: REST controller → service → `*RepositoryService` / Spring Data repository. Controllers do not call repositories or `EntityManager` directly.
-- Inject with constructor injection (`@RequiredArgsConstructor`). Do not use field `@Autowired`.
-- Entities that persist tickets/comments extend `BaseEntityWithUserAuditing` (id, JPA `@Version`, timestamps, soft `deleted`, created/updated by). Do not add a second version field.
-- Request bodies are DTOs; API responses are `*VO` wrapped in `CommonResponseVO` / `ListResponseVO`. Do not return entities.
-- Validate with Bean Validation (`@Valid` / `@Validated`) and existing custom-constraint style. Keep max lengths: title 200, description 5000, category 100, comment 5000, resolution 5000.
-- Ticket writes run in one MySQL transaction. Persist `TicketIndexingState` `PENDING` in that same transaction. Embedding/PGVector work starts only after commit (see `spec/rag-ingestion.md`).
-- Map domain failures through existing exception handling / `GlobalExceptionHandler`. Use stable codes `INVALID_TICKET_STATUS_TRANSITION` and `TERMINAL_TICKET_READ_ONLY`. Do not leak SQL, stack traces, prompts, or provider payloads.
-- Do not hardcode secrets. Do not add Gradle dependencies, brokers, Quartz, Kafka, or extra databases except the specified PGVector index.
-- Implement only `spec/` behaviour. Cite `FR-*` / `RAG-*` / `AC-*` in comments sparingly when a class owns those IDs. Preserve existing Bootcamp behaviour.
+- Use Java 21 and Spring Boot 3.5.8. Do not upgrade the stack unless explicitly required.
+- Root package is `com.supportticket.poc`.
+- Keep the existing layered structure: REST controller → service → Spring Data repository. Controllers must not access repositories directly.
+- Use constructor injection. Do not introduce field injection with `@Autowired`.
+- Keep persistence entities focused on relational ticket data. Do not expose JPA entities directly from REST endpoints.
+- Request and response payloads use DTOs from `com.supportticket.poc.dto`.
+- Validate request payloads at the backend using Bean Validation and `@Valid`. Keep validation consistent with the API contract in `spec/api-contract.md`.
+- Ticket lifecycle rules belong in `TicketStateMachine`; do not duplicate transition logic in controllers.
+- Enforce only the supported transitions: `OPEN → IN_PROGRESS → RESOLVED → CLOSED`, `OPEN → CANCELLED`, and `IN_PROGRESS → CANCELLED`. Reject all unsupported transitions.
+- PostgreSQL is the persistent relational store for ticket data. PGVector is used for the derived semantic-search index; do not store embeddings in ticket entity fields.
+- Keep ticket knowledge refreshed when ticket information affecting RAG context changes, including ticket updates, comments, and status changes.
+- Map domain and validation failures through the existing exception hierarchy and `GlobalExceptionHandler`. Return meaningful API errors without leaking stack traces, SQL, prompts, credentials, or provider payloads.
+- Do not hardcode passwords, tokens, API keys, database credentials, model credentials, or other secrets. Use configuration/environment variables.
+- Do not introduce unrelated infrastructure, brokers, schedulers, databases, frameworks, or autonomous-agent behaviour unless required by the specification.
+- Implement behaviour from `spec/` and keep implementation, tests, API contracts, and documentation aligned.
+- Preserve the standalone POC's single retrieval → generation RAG design. Do not add autonomous tool use or actions to the assistant.

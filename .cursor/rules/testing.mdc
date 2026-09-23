@@ -1,27 +1,43 @@
 ---
-description: Unit and integration testing rules for ticket CRUD, state machine, and RAG
-globs: src/test/**/*.java
+description: Unit and integration testing rules for the standalone Support Ticket POC
+globs: backend/src/test/**/*.java
 alwaysApply: false
 ---
 
 # Testing
 
-Read `spec/test-strategy.md` and `spec/evaluation-strategy.md` before writing tests. Annotate each test with the `FR-*`, `RAG-*`, `NFR-*`, or `AC-*` it covers. Review AI-generated tests; do not assume they are correct.
+Read `spec/test-strategy.md` and `spec/evaluation-strategy.md` before writing tests. Map tests to the relevant requirement or acceptance criterion where useful. Always review AI-generated tests; never assume generated tests are correct.
 
-## Deterministic (must assert exactly)
+## Deterministic Behaviour
 
-- **Unit:** service validation, field updates, optional assignee, length limits (max and max+1), comments, `OPEN` on create.
-- **State machine:** one test per allowed transition; parameterized reject for every other matrix cell; `TERMINAL_TICKET_READ_ONLY` from `CLOSED`/`CANCELLED`.
-- **API:** `/api/tickets` and `POST /api/ai/ask` contracts, envelopes, HTTP statuses, error codes.
-- **Persistence:** MySQL (not H2 as final proof), search/filter, `@Version` increments on searchable mutations including comments, `requestedVersion` matches ticket version.
-- **Ingestion:** `PENDING` is in the same MySQL transaction and rolls back with it. Indexing processing must not begin before commit. Rejected transitions persist neither ticket changes nor indexing intent.
+- **Ticket CRUD:** test create, list, details, updates, assignee changes, comments, search, and status filtering.
+- **Validation:** test valid input, missing required fields, malformed requests, and boundary conditions defined by the API contract.
+- **State machine:** test every allowed transition and reject unsupported transitions.
+- Allowed transitions are:
+  - `OPEN → IN_PROGRESS`
+  - `IN_PROGRESS → RESOLVED`
+  - `RESOLVED → CLOSED`
+  - `OPEN → CANCELLED`
+  - `IN_PROGRESS → CANCELLED`
+- Explicitly test invalid transitions such as `CLOSED → OPEN`, `RESOLVED → OPEN`, and `CANCELLED → OPEN`.
+- **API:** verify HTTP status codes, request/response contracts, validation failures, not-found cases, and meaningful error payloads.
+- **Persistence/integration:** integration tests should prove ticket state changes are persisted and rejected transitions do not mutate persisted state.
+- Do not weaken production behaviour merely to make a generated test pass.
 
-## Probabilistic / RAG
+## RAG / Probabilistic Behaviour
 
-- **Retrieval:** configured top-K and threshold applied; no generic metadata pre-filter required.
-- **No-match:** no qualifying chunk → explicit no-relevant-tickets payload and **zero** chat-model calls.
-- **Citations:** every `sources.ticketId` ⊆ retrieved qualifying ticket IDs; fabricated IDs fail.
-- **Grounding/hallucination:** ticket-specific claims must be entailed by retrieved passages (eval corpus + doubles). Live-provider suites are optional and never contain credentials.
-- **Stale index:** after re-ingestion, old chunks/metadata are gone; older `@Version` must not overwrite a newer index.
+- **Ingestion:** verify ticket knowledge is refreshed after ticket creation or changes that affect searchable context, including updates, comments, and status changes.
+- **Retrieval:** verify configured top-K and similarity-threshold values are used rather than hardcoded retrieval values.
+- **No-match:** when no qualifying ticket context is retrieved, return the explicit no-relevant-tickets response and do not invoke answer generation.
+- **Sources:** every returned source ticket ID must come from retrieved qualifying ticket documents.
+- **Grounding:** support-specific claims must be based only on retrieved ticket context; do not accept plausible answers based on general model knowledge.
+- **Hallucination:** tests must cover fabricated or unsupported ticket references where practical.
+- **Stale index:** after re-ingestion, retrieval must not rely on obsolete ticket knowledge.
+- Provider-dependent tests may be separated from deterministic tests and must never contain credentials.
 
-Do not change production code only to make a weak test pass. Gradle currently disables `test`; do not “fix” that unless the user is in the planning/implementation phase.
+## Test Execution
+
+- Use JUnit 5 and the testing libraries already configured by the project.
+- Prefer focused unit tests for deterministic business rules and integration tests where persistence or component interaction is part of the acceptance criterion.
+- Keep tests deterministic wherever possible.
+- Run the backend suite with `./gradlew clean test` using Java 21 before finalizing changes.
